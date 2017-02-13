@@ -1,4 +1,4 @@
-(defproject palette "0.1.1"
+(defproject palette "0.1.2"
   :description "A Clojure[script] library to manipulate RGB[A] and HEX colors."
   :url "https://github.com/tomthought/palette"
   :dependencies [[org.clojure/clojure "1.8.0"]
