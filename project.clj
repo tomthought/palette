@@ -4,7 +4,7 @@
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/clojurescript "1.9.229"]
 
-                 [com.7theta/utilis "0.8.2"]]
+                 [com.7theta/utilis "0.8.3"]]
 
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
@@ -23,7 +23,7 @@
 
   :profiles
   {:dev
-   {:dependencies [[figwheel-sidecar "0.5.9-SNAPSHOT"]
+   {:dependencies [[figwheel-sidecar "0.5.9"]
                    [com.cemerick/piggieback "0.2.1"]
                    [org.clojure/tools.nrepl "0.2.12"]
                    [org.clojure/tools.namespace "0.2.11"]]
