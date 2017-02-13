@@ -2,14 +2,14 @@
   :description "A Clojure[script] library to manipulate RGB[A] and HEX colors."
   :url "https://github.com/tomthought/palette"
   :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.clojure/clojurescript "1.9.229"]
+                 [org.clojure/clojurescript "1.9.473"]
 
                  [com.7theta/utilis "0.8.3"]]
 
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
-  :plugins [[lein-cljsbuild "1.1.4"]]
+  :plugins [[lein-cljsbuild "1.1.5"]]
 
   :min-lein-version "2.5.3"
 
@@ -28,7 +28,7 @@
                    [org.clojure/tools.nrepl "0.2.12"]
                    [org.clojure/tools.namespace "0.2.11"]]
     :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
-    :plugins      [[lein-figwheel "0.5.7"]]
+    :plugins      [[lein-figwheel "0.5.9"]]
     :source-paths ["dev" "src"]
     :figwheel {:http-server-root "public" ;; default and assumes "resources"
                :server-port 3449 ;; default
