@@ -1,4 +1,4 @@
-# com.tomthought/palette
+# tomthought/palette
 
 [![Current Version](https://img.shields.io/clojars/v/palette.svg)](https://clojars.org/palette)
 [![Circle CI](https://circleci.com/gh/tomthought/palette.svg?style=shield)](https://circleci.com/gh/tomthought/palette)
