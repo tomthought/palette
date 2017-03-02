@@ -1,8 +1,8 @@
-(defproject tomthought/palette "0.1.3"
+(defproject tomthought/palette "0.1.4"
   :description "A Clojure[script] library to manipulate RGB[A] and HEX colors."
   :url "https://github.com/tomthought/palette"
   :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.clojure/clojurescript "1.9.494"]
+                 [org.clojure/clojurescript "1.9.495"]
 
                  [com.7theta/utilis "0.8.3"]]
 
