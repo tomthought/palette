@@ -1,10 +1,10 @@
-(defproject tomthought/palette "0.1.4"
+(defproject tomthought/palette "0.2.0"
   :description "A Clojure[script] library to manipulate RGB[A] and HEX colors."
   :url "https://github.com/tomthought/palette"
   :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.clojure/clojurescript "1.9.495"]
+                 [org.clojure/clojurescript "1.9.946"]
 
-                 [com.7theta/utilis "0.8.3"]]
+                 [com.7theta/utilis "1.0.4"]]
 
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
@@ -23,9 +23,9 @@
 
   :profiles
   {:dev
-   {:dependencies [[figwheel-sidecar "0.5.9"]
-                   [com.cemerick/piggieback "0.2.1"]
-                   [org.clojure/tools.nrepl "0.2.12"]
+   {:dependencies [[figwheel-sidecar "0.5.14"]
+                   [com.cemerick/piggieback "0.2.2"]
+                   [org.clojure/tools.nrepl "0.2.13"]
                    [org.clojure/tools.namespace "0.2.11"]]
     :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
     :plugins      [[lein-figwheel "0.5.9"]]

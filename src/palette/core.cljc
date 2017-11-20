@@ -8,24 +8,91 @@
 
 ;;; Declarations
 
-(declare ensure-alpha
-         add-percent
+(declare add-percent
          rem-percent
 
-         ->rgba rgb? hex?
+         parse-rgb-string
+         parse-hex-string
+         parse-hsv-string
 
-         rgb-digits hex-digits)
+         clamp)
+
+;;; Records
+
+(defrecord ColorRGBA [r g b a])
+(defrecord ColorHSV [h s v])
 
 ;;; Public
 
-(defn decompose
-  "Return a vector of the RGBA values that comprise the color 'c'."
+(defn rgb?
+  [c]
+  (boolean
+   (if (string? c)
+     (re-find #"^rgb" c)
+     (instance? ColorRGBA c))))
+
+(defn hex?
+  [c]
+  (boolean
+   (and (string? c)
+        (re-find #"^\#" c))))
+
+(defn hsv?
+  [c]
+  (boolean
+   (if (string? c)
+     (re-find #"^hsv" c)
+     (instance? ColorHSV c))))
+
+(defn color-rgba
+  ([c]
+   (cond
+
+     (string? c)
+     (when-let [[r g b a] (not-empty
+                           (cond
+                             (rgb? c) (parse-rgb-string c)
+                             (hex? c) (parse-hex-string c)
+                             :else nil))]
+       (color-rgba r g b a))
+
+     (instance? ColorRGBA c) c
+
+     :else nil))
+  ([r g b & [a]]
+   (let [a (or a 255)]
+     (when (and r g b a)
+       (ColorRGBA.
+        (clamp r 0 255)
+        (clamp g 0 255)
+        (clamp b 0 255)
+        (clamp (or a 255) 0 255))))))
+
+(defn color-rgb
+  ([c] (color-rgba c))
+  ([r g b] (color-rgba r g b)))
+
+(defn color-hsv
+  ([c]
+   (cond
+     (string? c) (when (hsv? c)
+                   (when-let [[h s v] (parse-hsv-string c)]
+                     (color-hsv h s v)))
+     (instance? ColorHSV c) c
+     :else nil))
+  ([h s v]
+   (when (and h s v)
+     (ColorHSV.
+      (clamp h 0 360)
+      (clamp s 0 100)
+      (clamp v 0 100)))))
+
+(defn color
   [c]
   (cond
-
-    (rgb? c) (ensure-alpha (rgb-digits c))
-    (hex? c) (ensure-alpha (hex-digits c))
-
+    (rgb? c) (color-rgba c)
+    (hex? c) (color-rgba c)
+    (hsv? c) (color-hsv c)
     :else nil))
 
 (defn lighten
@@ -34,25 +101,26 @@
   opacity is not affected."
   ([c] (lighten c 0.10))
   ([c percent]
-   (when-let [[r g b a] (decompose c)]
-     (->rgba
-      (add-percent r percent)
-      (add-percent g percent)
-      (add-percent b percent)
-      a))))
+   (when-let [color (color c)]
+
+     (cond
+       (instance? ColorRGBA color)
+       (-> color
+           (update :r add-percent percent)
+           (update :g add-percent percent)
+           (update :b add-percent percent))
+
+       (instance? ColorHSV color)
+       (update color :v #(clamp (+ % (* percent 100.0)) 0 100))
+
+       :else nil))))
 
 (defn darken
   "Given color 'c' in either hex or rgb[a] format, darken it by 'percent' [0 1]
   amount. The percentage removed is calculated (* percent 255). The color's
   opacity is not affected."
   ([c] (darken c 0.10))
-  ([c percent]
-   (when-let [[r g b a] (decompose c)]
-     (->rgba
-      (rem-percent r percent)
-      (rem-percent g percent)
-      (rem-percent b percent)
-      a))))
+  ([c percent] (lighten c (- percent))))
 
 (defn transparent
   "Given color 'c' in either hex or rgb[a] format, set its opacity value to
@@ -63,25 +131,6 @@
      (->rgba r g b opacity))))
 
 ;;; Private
-
-(defn- rgb?
-  [c]
-  (boolean (and (string? c) (re-find #"^rgb" c))))
-
-(defn- hex?
-  [c]
-  (boolean (and (string? c) (re-find #"^\#" c))))
-
-(defn- rgb-digits
-  [c]
-  (let [digits (map string->long (re-seq #"\d+" c))]
-    (condp = (count digits)
-      3 digits
-      4 (conj (vec (take 3 digits))
-              (float (last digits)))
-      5 (conj (vec (take 3 digits))
-              (string->double
-               (st/join "." (drop 3 digits)))))))
 
 (def ^:private hex-character-strings
   ["A" "B" "C" "D" "E" "F"
@@ -97,30 +146,51 @@
   (boolean (hex-characters c)))
 
 (defn- hex-digits
-  [color]
-  (->> color
+  [c]
+  (->> c
        st/upper-case
        (filter hex-character?)
        (partition 2)
        (map (comp (fn [s]
-                 #?(:clj (Integer/parseInt s 16)
+                 #?(:clj (try (Integer/parseInt s 16)
+                              (catch Exception e nil))
                     :cljs (js/parseInt s 16)))
                (partial st/join "")))))
 
-(defn- ensure-alpha
-  [color]
-  (if (= 4 (count color))
-    color
-    (conj (vec color) 1.0)))
-
-(defn- ->rgba
-  [r g b a]
-  (format "rgba(%s, %s, %s, %s)" r g b (or a 1.0)))
+(defn- clamp
+  [x mn mx]
+  (when (and x mn mx)
+    (max (min x mx) mn)))
 
 (defn- add-percent
   [c p]
-  (int (max (min (+ c (* 255 p)) 255) 0)))
+  (int (clamp (+ c (* 255 p)) 0 255)))
 
-(defn- rem-percent
-  [c p]
-  (int (max (min (- c (* 255 p)) 255) 0)))
+(defn- rgb-digits
+  [c]
+  (let [digits (->> c
+                    (re-seq #"[-+]?\d*\.\d+|\d+")
+                    (map string->double))]
+    (cond
+      (= 3 (count digits)) (conj (vec digits) 255)
+      (= 4 (count digits)) digits
+      :else nil)))
+
+(defn- parse-rgb-string
+  [rgb-string]
+  (rgb-digits rgb-string))
+
+(defn- parse-hex-string
+  [hex-string]
+  (hex-digits hex-string))
+
+(defn- hsv-digits
+  [c]
+  (let [digits (->> c
+                    (re-seq #"[-+]?\d*\.\d+|\d+")
+                    (map string->double))]
+    (when (= 3 (count digits)) digits)))
+
+(defn- parse-hsv-string
+  [hsv-string]
+  (hsv-digits hsv-string))
