@@ -4,7 +4,7 @@
 [![Circle CI](https://circleci.com/gh/tomthought/palette.svg?style=shield)](https://circleci.com/gh/tomthought/palette)
 [![Dependencies Status](https://jarkeeper.com/tomthought/palette/status.svg)](https://jarkeeper.com/tomthought/palette)
 
-A Clojure[script] library to manipulate RGB[A] and HEX colors.
+A Clojure[script] library to manipulate RGB[A], HEX and HSV colors.
 
 ## Copyright and License
 
