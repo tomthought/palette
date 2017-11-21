@@ -15,7 +15,12 @@
          parse-hex-string
          parse-hsv-string
 
-         clamp)
+         hsv->rgba
+         rgba->hsv
+
+         clamp
+
+         abs)
 
 ;;; Records
 
@@ -57,6 +62,7 @@
        (color-rgba r g b a))
 
      (instance? ColorRGBA c) c
+     (instance? ColorHSV c) (hsv->rgba c)
 
      :else nil))
   ([r g b & [a]]
@@ -79,6 +85,7 @@
                    (when-let [[h s v] (parse-hsv-string c)]
                      (color-hsv h s v)))
      (instance? ColorHSV c) c
+     (instance? ColorRGBA c) (rgba->hsv c)
      :else nil))
   ([h s v]
    (when (and h s v)
@@ -86,6 +93,49 @@
       (clamp h 0 360)
       (clamp s 0 100)
       (clamp v 0 100)))))
+
+(defn rgba->hsv
+  [rgba]
+  (let [{:keys [r g b a]} rgba
+        r (/ r 255.0)
+        g (/ g 255.0)
+        b (/ b 255.0)
+
+        c-max (max r g b)
+        c-min (min r g b)
+
+        delta (- c-max c-min)
+
+        h (cond
+            (zero? delta) 0
+            (= c-max r) (* 60 (mod (/ (- g b) delta) 6))
+            (= c-max g) (* 60 (+ (/ (- b r) delta) 2))
+            (= c-max b) (* 60 (+ (/ (- r g) delta) 4)))
+        s (float (* 100 (if (zero? c-max) 0 (/ delta c-max))))
+        v (float (* 100 c-max))]
+    (color-hsv h s v)))
+
+(defn hsv->rgba
+  [hsv]
+  (let [{:keys [h s v]} hsv
+        s (float (/ s 100))
+        v (float (/ v 100))
+        c (* v s)
+        x (* c (- 1.0 (abs (dec (mod (/ h 60) 2)))))
+        m (- v c)
+
+        [r g b] (cond
+                  (<= 0 h 59) [c x 0]
+                  (<= 60 h 119) [x c 0]
+                  (<= 120 h 179) [0 c x]
+                  (<= 180 h 239) [0 x c]
+                  (<= 240 h 299) [x 0 c]
+                  (<= 300 h 359) [c 0 x]
+                  :else nil)]
+    (color-rgb
+     (* 255 (+ r m))
+     (* 255 (+ g m))
+     (* 255 (+ b m)))))
 
 (defn color
   [c]
@@ -127,10 +177,16 @@
   'opacity' [0 1]. By default it is set to 50%."
   ([c] (transparent c 0.50))
   ([c opacity]
-   (when-let [[r g b _] (decompose c)]
-     (->rgba r g b opacity))))
+   (when-let [color (color c)]
+     (when (rgb? color)
+       (assoc color :a opacity)))))
 
 ;;; Private
+
+(defn- abs
+  [x]
+  #?(:clj (Math/abs (double x))
+     :cljs (js/Math.abs (double x))))
 
 (def ^:private hex-character-strings
   ["A" "B" "C" "D" "E" "F"
