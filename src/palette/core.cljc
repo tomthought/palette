@@ -27,15 +27,13 @@
          abs sqrt pow
 
          magnitude
-         euclidean-distance
-
-         visual-similarity-score)
+         euclidean-distance)
 
 ;;; Records
 
 (defrecord ColorRGBA [r g b a])
 (defrecord ColorHSV [h s v])
-(defrecord ColorCIE [x y])
+(defrecord ColorLAB [l a b])
 
 ;;; Public
 
@@ -57,7 +55,7 @@
   (boolean
    (if (string? c)
      (re-find #"^cie" c)
-     (instance? ColorCIE c))))
+     (instance? ColorLAB c))))
 
 (defn hsv?
   [c]
@@ -114,16 +112,17 @@
   ([c]
    (cond
      (string? c) (when (cie? c)
-                   (when-let [[x y] (parse-cie-string c)]
-                     (color-cie x y)))
+                   (when-let [[l a b] (parse-cie-string c)]
+                     (color-cie l a b)))
      (instance? ColorHSV c) (color-cie (color-rgb c))
      (instance? ColorRGBA c) (rgba->cie c)
      :else nil))
-  ([x y]
-   (when (and x y)
-     (ColorCIE.
-      (clamp x 0 1)
-      (clamp y 0 1)))))
+  ([l a b]
+   (when (and l a b)
+     (ColorLAB.
+      (clamp l 0 100)
+      (clamp a -128 128)
+      (clamp b -128 128)))))
 
 (defn rgba->hsv
   [rgba]
@@ -148,9 +147,8 @@
 
 (defn rgba->cie
   [rgba]
-  (let [{:keys [r g b]} rgba]
-    (when-let [[x y] (cie/rgb-to-cie r g b)]
-      (color-cie x y))))
+  (when-let [{:keys [l a b]} (cie/rgb->lab rgba)]
+    (color-cie l a b)))
 
 (defn hsv->rgba
   [hsv]
@@ -163,13 +161,13 @@
         m (- v c)
 
         [r g b] (cond
-                  (<= 0 h 59) [c x 0]
-                  (<= 60 h 119) [x c 0]
-                  (<= 120 h 179) [0 c x]
-                  (<= 180 h 239) [0 x c]
-                  (<= 240 h 299) [x 0 c]
-                  (<= 300 h 359) [c 0 x]
-                  :else nil)]
+                  (and (>= h 0) (< h 60)) [c x 0]
+                  (and (>= h 60) (< h 120)) [x c 0]
+                  (and (>= h 120) (< h 180)) [0 c x]
+                  (and (>= h 180) (< h 240)) [0 x c]
+                  (and (>= h 240) (< h 300)) [x 0 c]
+                  (and (>= h 300) (< h 360)) [c 0 x]
+                  :else (throw (ex-info "bad h value" {:h h})))]
     (color-rgb
      (* 255 (+ r m))
      (* 255 (+ g m))
@@ -181,6 +179,7 @@
     (rgb? c) (color-rgba c)
     (hex? c) (color-rgba c)
     (hsv? c) (color-hsv c)
+    (cie? c) (color-cie c)
     :else nil))
 
 (defn intensity
@@ -201,62 +200,11 @@
        (:a c)))))
 
 (defn similarity
-  "Perform a euclidean distance calculation between the two colors."
+  "Perform a ciede2000 similarity score calculation between the two colors."
   [c1 c2]
-  (let [c1-cie (color-cie (color-rgb (color c1)))
-        c2-cie (color-cie (color-rgb (color c2)))]
-    (- 1.0 (euclidean-distance
-            (:x c1-cie)
-            (:y c1-cie)
-            (:x c2-cie)
-            (:y c2-cie)))))
-
-(defn visual-similarity
-  "Measure the similarity between two colors. Similarity is between 0 and 1.
-  Note that this function is attempting to measure how similar two colors are to
-  the human eye. So colors are that are similar in hue might score very well,
-  even if their RGB values would not indicate this."
-  [c1 c2]
-  (float
-
-   (let [c1-rgb (color-rgb (color c1))
-         c2-rgb (color-rgb (color c2))]
-
-     (or
-
-      ;; When RGB is not similar, fallback to check if HSV is similar.
-      (let [c1 (color-hsv c1-rgb)
-            c2 (color-hsv c2-rgb)
-
-            c1-dark-or-not-saturated? (or (< (:v c1) 20) (< (:s c1) 10))
-            c2-dark-or-not-saturated? (or (< (:v c2) 20) (< (:s c2) 10))]
-        (when (and c1 c2)
-
-          (cond
-
-            ;; both are dark or not saturated
-            (and c1-dark-or-not-saturated? c2-dark-or-not-saturated?)
-            (visual-similarity-score
-             (:h c1) (:s c1) (:v c1)
-             (:h c2) (:s c2) (:v c2)
-             360 40 40
-             0.0 0.25 0.75)
-
-            ;; one of them is dark or not saturated
-            (or c1-dark-or-not-saturated? c2-dark-or-not-saturated?)
-            (visual-similarity-score
-             (:h c1) (:s c1) (:v c1)
-             (:h c2) (:s c2) (:v c2)
-             360 100 20
-             0.10 0.20 0.70)
-
-            ;; perform normal score
-            :else (visual-similarity-score
-                   (:h c1) (:s c1) (:v c1)
-                   (:h c2) (:s c2) (:v c2)
-                   60 100 100
-                   0.60 0.30 0.10))))
-      0))))
+  (let [c1-cie (color-cie (color-rgba (color c1)))
+        c2-cie (color-cie (color-rgba (color c2)))]
+    (- 1.0 (cie/ciede2000 c1-cie c2-cie))))
 
 (comment
 
@@ -275,16 +223,22 @@
         c10 (color "hsv(0,0,100)") ;; white
         c11 (color "hsv(0,0,73)") ;; grey
 
-        sim-fn visual-similarity]
+        c12 (color "hsv(0,0,0)") ;; black
+        c13 (color "hsv(140,100,2)") ;; also basically black
+
+        c14 (color "hsv(176,64,10)") ;; black
+        c15 (color "hsv(173,46,56)") ;; teal
+
+        sim-fn similarity]
 
     (clojure.pprint/pprint
      [
 
       ["c1,c2: very similar: " (sim-fn c1 c2)] ;; very similar
-      ["c2,c3: pretty different: " (sim-fn c2 c3)] ;; pretty different (darkness)
+      ["c2,c3: very similar: " (sim-fn c2 c3)] ;; very similar (darkness)
       ["c3,c4: very similar: " (sim-fn c3 c4)] ;; very similar (darkness)
       ["c1,c4: very different: " (sim-fn c1 c4)] ;; very different (hues)
-      ["c1,c5: very different: " (sim-fn c1 c5)] ;; very different (brightness)
+      ["c1,c5: pretty similar: " (sim-fn c1 c5)] ;; pretty similar (brightness)
       ["c5,c6: pretty similar: " (sim-fn c5 c6)] ;; pretty similar (darkness)
 
       ["c7,c8: very similar: " (sim-fn c7 c8)] ;; very similar (darkness)
@@ -292,6 +246,10 @@
       ["c7,c9: very similar: " (sim-fn c7 c9)] ;; very similar (darkness)
 
       ["c10,c11: pretty different: " (sim-fn c10 c11)] ;; pretty different (white vs. light grey)
+      ["c12,c13: very similar: " (sim-fn c12 c13)] ;; very similar (both black)
+      ["c14,c15: very different: " (sim-fn c14 c15)] ;; very different
+
+      ["c12,c14: very similar " (sim-fn c12 c14)] ;; very similar (both black)
 
       ]))
 
@@ -373,10 +331,10 @@
        (filter hex-character?)
        (partition 2)
        (map (comp (fn [s]
-                    #?(:clj (try (Integer/parseInt s 16)
-                                 (catch Exception e nil))
-                       :cljs (js/parseInt s 16)))
-                  (partial st/join "")))))
+                 #?(:clj (try (Integer/parseInt s 16)
+                              (catch Exception e nil))
+                    :cljs (js/parseInt s 16)))
+               (partial st/join "")))))
 
 (defn- clamp
   [x mn mx]
@@ -421,7 +379,7 @@
   (let [digits (->> c
                     (re-seq #"[-+]?\d*\.\d+|\d+")
                     (map string->double))]
-    (when (= 2 (count digits)) digits)))
+    (when (= 3 (count digits)) digits)))
 
 (defn- parse-cie-string
   [cie-string]
@@ -444,25 +402,3 @@
 (defn magnitude
   [c]
   (euclidean-distance (:r c) (:g c) (:b c) 0 0 0))
-
-(defn- visual-similarity-score
-  [h1 s1 v1 h2 s2 v2 ht st vt hw sw vw]
-  (let [h-zero-threshold ht
-        s-zero-threshold st
-        v-zero-threshold vt
-
-        h-diff (clamp (abs (- h1 h2)) 0 h-zero-threshold)
-        s-diff (clamp (abs (- s1 s2)) 0 s-zero-threshold)
-        v-diff (clamp (abs (- v1 v2)) 0 v-zero-threshold)
-
-        h-diff-normalized (/ h-diff h-zero-threshold)
-        s-diff-normalized (/ s-diff s-zero-threshold)
-        v-diff-normalized (/ v-diff v-zero-threshold)
-
-        h-weight hw
-        s-weight sw
-        v-weight vw]
-
-    (+ (* h-weight (- 1.0 h-diff-normalized))
-       (* s-weight (- 1.0 s-diff-normalized))
-       (* v-weight (- 1.0 v-diff-normalized)))))
