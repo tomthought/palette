@@ -184,9 +184,9 @@
 
 (defn intensity
   "Return the intensity for 'color'."
-  ([color]
-   (when-let [color (color-rgb color)]
-     (magnitude color))))
+  [color]
+  (when-let [color (color-rgb color)]
+    (* 255.0 (:l (color-cie color)))))
 
 (defn with-intensity
   "Return the same 'color' with intensity of 'desired-intensity'."
@@ -331,10 +331,10 @@
        (filter hex-character?)
        (partition 2)
        (map (comp (fn [s]
-                 #?(:clj (try (Integer/parseInt s 16)
-                              (catch Exception e nil))
-                    :cljs (js/parseInt s 16)))
-               (partial st/join "")))))
+                    #?(:clj (try (Integer/parseInt s 16)
+                                 (catch Exception e nil))
+                       :cljs (js/parseInt s 16)))
+                  (partial st/join "")))))
 
 (defn- clamp
   [x mn mx]
