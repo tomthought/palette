@@ -8,6 +8,6 @@ A Clojure[script] library to manipulate RGB[A], HEX and HSV colors.
 
 ## Copyright and License
 
-Copyright © 2017 Tom Goldsmith
+Copyright © 2018 Tom Goldsmith
 
 Distributed under the Eclipse Public License.
