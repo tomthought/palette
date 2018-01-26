@@ -4,7 +4,10 @@
             #?(:cljs [goog.string :refer [format]])
             #?(:cljs [goog.string.format :as gformat])
 
-            [utilis.types.number :refer [string->long string->double]]))
+            [palette.cie :as cie]
+
+            [utilis.types.number :refer [string->long string->double]]
+            [clojure.string :as str]))
 
 ;;; Declarations
 
@@ -14,18 +17,37 @@
          parse-rgb-string
          parse-hex-string
          parse-hsv-string
+         parse-lab-string
 
          hsv->rgba
          rgba->hsv
+         rgba->lab
 
          clamp
 
-         abs)
+         abs sqrt pow
+
+         magnitude
+         euclidean-distance
+
+         rgba->string
+         hsv->string
+         lab->string)
 
 ;;; Records
 
-(defrecord ColorRGBA [r g b a])
-(defrecord ColorHSV [h s v])
+(defrecord ColorRGBA [r g b a]
+  Object
+  (toString [this]
+    (rgba->string this)))
+(defrecord ColorHSV [h s v]
+  Object
+  (toString [this]
+    (hsv->string this)))
+(defrecord ColorLAB [l a b]
+  Object
+  (toString [this]
+    (lab->string this)))
 
 ;;; Public
 
@@ -41,6 +63,13 @@
   (boolean
    (and (string? c)
         (re-find #"^\#" c))))
+
+(defn lab?
+  [c]
+  (boolean
+   (if (string? c)
+     (re-find #"^lab" c)
+     (instance? ColorLAB c))))
 
 (defn hsv?
   [c]
@@ -65,18 +94,18 @@
      (instance? ColorHSV c) (hsv->rgba c)
 
      :else nil))
-  ([r g b & [a]]
+  ([r g b a]
    (let [a (or a 255)]
      (when (and r g b a)
        (ColorRGBA.
         (clamp r 0 255)
         (clamp g 0 255)
         (clamp b 0 255)
-        (clamp (or a 255) 0 255))))))
+        (clamp a 0 255))))))
 
 (defn color-rgb
   ([c] (color-rgba c))
-  ([r g b] (color-rgba r g b)))
+  ([r g b] (color-rgba r g b 255)))
 
 (defn color-hsv
   ([c]
@@ -93,6 +122,23 @@
       (clamp h 0 360)
       (clamp s 0 100)
       (clamp v 0 100)))))
+
+(defn color-lab
+  ([c]
+   (cond
+     (string? c) (when (lab? c)
+                   (when-let [[l a b] (parse-lab-string c)]
+                     (color-lab l a b)))
+     (instance? ColorHSV c) (color-lab (color-rgb c))
+     (instance? ColorRGBA c) (rgba->lab c)
+     (instance? ColorLAB c) c
+     :else nil))
+  ([l a b]
+   (when (and l a b)
+     (ColorLAB.
+      (clamp l 0 100)
+      (clamp a -128 128)
+      (clamp b -128 128)))))
 
 (defn rgba->hsv
   [rgba]
@@ -115,9 +161,15 @@
         v (float (* 100 c-max))]
     (color-hsv h s v)))
 
+(defn rgba->lab
+  [rgba]
+  (when-let [{:keys [l a b]} (cie/rgb->lab rgba)]
+    (color-lab l a b)))
+
 (defn hsv->rgba
   [hsv]
   (let [{:keys [h s v]} hsv
+        h (mod h 360)
         s (float (/ s 100))
         v (float (/ v 100))
         c (* v s)
@@ -125,13 +177,13 @@
         m (- v c)
 
         [r g b] (cond
-                  (<= 0 h 59) [c x 0]
-                  (<= 60 h 119) [x c 0]
-                  (<= 120 h 179) [0 c x]
-                  (<= 180 h 239) [0 x c]
-                  (<= 240 h 299) [x 0 c]
-                  (<= 300 h 359) [c 0 x]
-                  :else nil)]
+                  (and (>= h 0) (< h 60)) [c x 0]
+                  (and (>= h 60) (< h 120)) [x c 0]
+                  (and (>= h 120) (< h 180)) [0 c x]
+                  (and (>= h 180) (< h 240)) [0 x c]
+                  (and (>= h 240) (< h 300)) [x 0 c]
+                  (and (>= h 300) (< h 360)) [c 0 x]
+                  :else (throw (ex-info "bad h value" {:h h})))]
     (color-rgb
      (* 255 (+ r m))
      (* 255 (+ g m))
@@ -143,7 +195,83 @@
     (rgb? c) (color-rgba c)
     (hex? c) (color-rgba c)
     (hsv? c) (color-hsv c)
+    (lab? c) (color-lab c)
     :else nil))
+
+(defn intensity
+  "Return the intensity for 'color'."
+  [color]
+  (when-let [color (color-rgb color)]
+    (* 255.0 (/ (:l (color-lab color)) 100))))
+
+(defn with-intensity
+  "Return the same 'color' with intensity of 'desired-intensity'."
+  [color desired-intensity]
+  (when-let [c (color-rgba color)]
+    (let [m (/ desired-intensity (intensity c))]
+      (color-rgba
+       (* (:r c) m)
+       (* (:g c) m)
+       (* (:b c) m)
+       (:a c)))))
+
+(defn similarity
+  "Perform a ciede2000 similarity score calculation between the two colors."
+  [c1 c2]
+  (let [c1-lab (if (instance? ColorLAB c1) c1
+                   (color-lab (color-rgba (color c1))))
+        c2-lab (if (instance? ColorLAB c2) c2
+                   (color-lab (color-rgba (color c2))))]
+    (- 1.0 (cie/ciede2000 c1-lab c2-lab))))
+
+(comment
+
+  (let [c1 (color "hsv(348,41,44)")
+        c2 (color "hsv(344,49,24)")
+        c3 (color "hsv(320,11,11)")
+        c4 (color "hsv(240,13,9)")
+
+        c5 (color "hsv(339,37,18)")
+        c6 (color "hsv(300,6,13)")
+
+        c7 (color "hsv(192,15,13)")
+        c8 (color "hsv(200,27,9)")
+        c9 (color "hsv(300,18,15)")
+
+        c10 (color "hsv(0,0,100)") ;; white
+        c11 (color "hsv(0,0,73)") ;; grey
+
+        c12 (color "hsv(0,0,0)") ;; black
+        c13 (color "hsv(140,100,2)") ;; also basically black
+
+        c14 (color "hsv(176,64,10)") ;; black
+        c15 (color "hsv(173,46,56)") ;; teal
+
+        sim-fn similarity]
+
+    (clojure.pprint/pprint
+     [
+
+      ["c1,c2: very similar: " (sim-fn c1 c2)] ;; very similar
+      ["c2,c3: very similar: " (sim-fn c2 c3)] ;; very similar (darkness)
+      ["c3,c4: very similar: " (sim-fn c3 c4)] ;; very similar (darkness)
+      ["c1,c4: very different: " (sim-fn c1 c4)] ;; very different (hues)
+      ["c1,c5: pretty similar: " (sim-fn c1 c5)] ;; pretty similar (brightness)
+      ["c5,c6: pretty similar: " (sim-fn c5 c6)] ;; pretty similar (darkness)
+
+      ["c7,c8: very similar: " (sim-fn c7 c8)] ;; very similar (darkness)
+      ["c8,c9: very similar: " (sim-fn c8 c9)] ;; very similar (darkness)
+      ["c7,c9: very similar: " (sim-fn c7 c9)] ;; very similar (darkness)
+
+      ["c10,c11: pretty different: " (sim-fn c10 c11)] ;; pretty different (white vs. light grey)
+      ["c12,c13: very similar: " (sim-fn c12 c13)] ;; very similar (both black)
+      ["c14,c15: very different: " (sim-fn c14 c15)] ;; very different
+
+      ["c12,c14: very similar " (sim-fn c12 c14)] ;; very similar (both black)
+
+      ]))
+
+  )
 
 (defn lighten
   "Given color 'c' in either hex or rgb[a] format, lighten it by 'percent' [0 1]
@@ -161,7 +289,10 @@
            (update :b add-percent percent))
 
        (instance? ColorHSV color)
-       (update color :v #(clamp (+ % (* percent 100.0)) 0 100))
+       (-> color
+           color-rgb
+           (lighten percent)
+           color-hsv)
 
        :else nil))))
 
@@ -187,6 +318,16 @@
   [x]
   #?(:clj (Math/abs (double x))
      :cljs (js/Math.abs (double x))))
+
+(defn- sqrt
+  [x]
+  #?(:clj (Math/sqrt x)
+     :cljs (js/Math.sqrt x)))
+
+(defn- pow
+  [x y]
+  #?(:clj (Math/pow x y)
+     :cljs (js/Math.pow x y)))
 
 (def ^:private hex-character-strings
   ["A" "B" "C" "D" "E" "F"
@@ -250,3 +391,44 @@
 (defn- parse-hsv-string
   [hsv-string]
   (hsv-digits hsv-string))
+
+(defn- lab-digits
+  [c]
+  (let [digits (->> c
+                    (re-seq #"[-+]?\d*\.\d+|\d+")
+                    (map string->double))]
+    (when (= 3 (count digits)) digits)))
+
+(defn- parse-lab-string
+  [lab-string]
+  (lab-digits lab-string))
+
+(defn- euclidean-distance
+  ([] 0)
+  ([x1 x2]
+   (sqrt (pow (- x2 x1) 2)))
+  ([x1 y1 x2 y2]
+   (sqrt
+    (+ (pow (- x2 x1) 2)
+       (pow (- y2 y1) 2))))
+  ([x1 y1 z1 x2 y2 z2]
+   (sqrt
+    (+ (pow (- x2 x1) 2)
+       (pow (- y2 y1) 2)
+       (pow (- z2 z1) 2)))))
+
+(defn magnitude
+  [c]
+  (euclidean-distance (:r c) (:g c) (:b c) 0 0 0))
+
+(defn- rgba->string
+  [rgba]
+  (str "rgba(" (str/join "," [(:r rgba) (:g rgba) (:b rgba) (:a rgba)]) ")"))
+
+(defn- hsv->string
+  [hsv]
+  (str "hsv(" (str/join "," [(:h hsv) (:s hsv) (:v hsv)]) ")"))
+
+(defn- lab->string
+  [lab]
+  (str "lab(" (str/join "," [(:l lab) (:a lab) (:b lab)]) ")"))
