@@ -6,7 +6,8 @@
 
             [palette.cie :as cie]
 
-            [utilis.types.number :refer [string->long string->double]]))
+            [utilis.types.number :refer [string->long string->double]]
+            [clojure.string :as str]))
 
 ;;; Declarations
 
@@ -16,24 +17,37 @@
          parse-rgb-string
          parse-hex-string
          parse-hsv-string
-         parse-cie-string
+         parse-lab-string
 
          hsv->rgba
          rgba->hsv
-         rgba->cie
+         rgba->lab
 
          clamp
 
          abs sqrt pow
 
          magnitude
-         euclidean-distance)
+         euclidean-distance
+
+         rgba->string
+         hsv->string
+         lab->string)
 
 ;;; Records
 
-(defrecord ColorRGBA [r g b a])
-(defrecord ColorHSV [h s v])
-(defrecord ColorLAB [l a b])
+(defrecord ColorRGBA [r g b a]
+  Object
+  (toString [this]
+    (rgba->string this)))
+(defrecord ColorHSV [h s v]
+  Object
+  (toString [this]
+    (hsv->string this)))
+(defrecord ColorLAB [l a b]
+  Object
+  (toString [this]
+    (lab->string this)))
 
 ;;; Public
 
@@ -50,11 +64,11 @@
    (and (string? c)
         (re-find #"^\#" c))))
 
-(defn cie?
+(defn lab?
   [c]
   (boolean
    (if (string? c)
-     (re-find #"^cie" c)
+     (re-find #"^lab" c)
      (instance? ColorLAB c))))
 
 (defn hsv?
@@ -81,12 +95,13 @@
 
      :else nil))
   ([r g b a]
-   (when (and r g b a)
-     (ColorRGBA.
-      (clamp r 0 255)
-      (clamp g 0 255)
-      (clamp b 0 255)
-      (clamp (or a 255) 0 255)))))
+   (let [a (or a 255)]
+     (when (and r g b a)
+       (ColorRGBA.
+        (clamp r 0 255)
+        (clamp g 0 255)
+        (clamp b 0 255)
+        (clamp a 0 255))))))
 
 (defn color-rgb
   ([c] (color-rgba c))
@@ -108,14 +123,15 @@
       (clamp s 0 100)
       (clamp v 0 100)))))
 
-(defn color-cie
+(defn color-lab
   ([c]
    (cond
-     (string? c) (when (cie? c)
-                   (when-let [[l a b] (parse-cie-string c)]
-                     (color-cie l a b)))
-     (instance? ColorHSV c) (color-cie (color-rgb c))
-     (instance? ColorRGBA c) (rgba->cie c)
+     (string? c) (when (lab? c)
+                   (when-let [[l a b] (parse-lab-string c)]
+                     (color-lab l a b)))
+     (instance? ColorHSV c) (color-lab (color-rgb c))
+     (instance? ColorRGBA c) (rgba->lab c)
+     (instance? ColorLAB c) c
      :else nil))
   ([l a b]
    (when (and l a b)
@@ -145,10 +161,10 @@
         v (float (* 100 c-max))]
     (color-hsv h s v)))
 
-(defn rgba->cie
+(defn rgba->lab
   [rgba]
   (when-let [{:keys [l a b]} (cie/rgb->lab rgba)]
-    (color-cie l a b)))
+    (color-lab l a b)))
 
 (defn hsv->rgba
   [hsv]
@@ -179,14 +195,14 @@
     (rgb? c) (color-rgba c)
     (hex? c) (color-rgba c)
     (hsv? c) (color-hsv c)
-    (cie? c) (color-cie c)
+    (lab? c) (color-lab c)
     :else nil))
 
 (defn intensity
   "Return the intensity for 'color'."
   [color]
   (when-let [color (color-rgb color)]
-    (* 255.0 (:l (color-cie color)))))
+    (* 255.0 (/ (:l (color-lab color)) 100))))
 
 (defn with-intensity
   "Return the same 'color' with intensity of 'desired-intensity'."
@@ -202,9 +218,11 @@
 (defn similarity
   "Perform a ciede2000 similarity score calculation between the two colors."
   [c1 c2]
-  (let [c1-cie (color-cie (color-rgba (color c1)))
-        c2-cie (color-cie (color-rgba (color c2)))]
-    (- 1.0 (cie/ciede2000 c1-cie c2-cie))))
+  (let [c1-lab (if (instance? ColorLAB c1) c1
+                   (color-lab (color-rgba (color c1))))
+        c2-lab (if (instance? ColorLAB c2) c2
+                   (color-lab (color-rgba (color c2))))]
+    (- 1.0 (cie/ciede2000 c1-lab c2-lab))))
 
 (comment
 
@@ -331,10 +349,10 @@
        (filter hex-character?)
        (partition 2)
        (map (comp (fn [s]
-                    #?(:clj (try (Integer/parseInt s 16)
-                                 (catch Exception e nil))
-                       :cljs (js/parseInt s 16)))
-                  (partial st/join "")))))
+                 #?(:clj (try (Integer/parseInt s 16)
+                              (catch Exception e nil))
+                    :cljs (js/parseInt s 16)))
+               (partial st/join "")))))
 
 (defn- clamp
   [x mn mx]
@@ -374,16 +392,16 @@
   [hsv-string]
   (hsv-digits hsv-string))
 
-(defn- cie-digits
+(defn- lab-digits
   [c]
   (let [digits (->> c
                     (re-seq #"[-+]?\d*\.\d+|\d+")
                     (map string->double))]
     (when (= 3 (count digits)) digits)))
 
-(defn- parse-cie-string
-  [cie-string]
-  (cie-digits cie-string))
+(defn- parse-lab-string
+  [lab-string]
+  (lab-digits lab-string))
 
 (defn- euclidean-distance
   ([] 0)
@@ -402,3 +420,15 @@
 (defn magnitude
   [c]
   (euclidean-distance (:r c) (:g c) (:b c) 0 0 0))
+
+(defn- rgba->string
+  [rgba]
+  (str "rgba(" (str/join "," [(:r rgba) (:g rgba) (:b rgba) (:a rgba)]) ")"))
+
+(defn- hsv->string
+  [hsv]
+  (str "hsv(" (str/join "," [(:h hsv) (:s hsv) (:v hsv)]) ")"))
+
+(defn- lab->string
+  [lab]
+  (str "lab(" (str/join "," [(:l lab) (:a lab) (:b lab)]) ")"))
