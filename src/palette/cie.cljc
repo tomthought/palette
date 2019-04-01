@@ -28,91 +28,92 @@
 ;;; API
 
 (defn ciede2000
-  [c1 c2]
+  (^double
+   [^doubles c1 ^doubles c2]
+   (let [l1 (aget c1 0)
+         a1 (aget c1 1)
+         b1 (aget c1 2)
 
-  (let [l1 (:l c1)
-        a1 (:a c1)
-        b1 (:b c1)
+         l2 (aget c2 0)
+         a2 (aget c2 1)
+         b2 (aget c2 2)
 
-        l2 (:l c2)
-        a2 (:a c2)
-        b2 (:b c2)
+         _ (when-not (and l1 a1 b1 l2 a2 b2)
+             (throw
+              (ex-info
+               "Colors provided to ciede2000 must be in LAB color space."
+               {:c1 c1
+                :c2 c2})))
 
-        _ (when-not (and l1 a1 b1 l2 a2 b2)
-            (throw
-             (ex-info
-              "Colors provided to ciede2000 must be in LAB color space."
-              {:c1 c1
-               :c2 c2})))
+         kl 1
+         kc 1
+         kh 1
 
-        kl 1
-        kc 1
-        kh 1
+         ;; Calculate C1p, C2p, h1p, h2p
+         c1* (sqrt (+ (pow a1 2) (pow b1 2)))
+         c2* (sqrt (+ (pow a2 2) (pow b2 2)))
 
-        ;; Calculate C1p, C2p, h1p, h2p
-        c1* (sqrt (+ (pow a1 2) (pow b1 2)))
-        c2* (sqrt (+ (pow a2 2) (pow b2 2)))
+         a_c1_c2 (/ (+ c1* c2*) 2.0)
 
-        a_c1_c2 (/ (+ c1* c2*) 2.0)
+         g (* 0.50
+              (- 1.0
+                 (sqrt
+                  (/ (pow a_c1_c2 7.0)
+                     (+ (pow a_c1_c2 7.0)
+                        (pow 25.0 7.0))))))
 
-        g (* 0.50
-             (- 1.0
-                (sqrt
-                 (+ (/ (pow a_c1_c2 7.0)
-                       (+ (pow a_c1_c2 7.0)
-                          (pow 25.0 7.0)))))))
+         a1p (* (+ 1.0 g) a1)
+         a2p (* (+ 1.0 g) a2)
 
-        a1p (* (+ 1.0 g) a1)
-        a2p (* (+ 1.0 g) a2)
+         c1p (sqrt (+ (pow a1p 2) (pow b1 2)))
+         c2p (sqrt (+ (pow a2p 2) (pow b2 2)))
 
-        c1p (sqrt (+ (pow a1p 2) (pow b1 2)))
-        c2p (sqrt (+ (pow a2p 2) (pow b2 2)))
+         h1p (hp_f b1 a1p)
+         h2p (hp_f b2 a2p)
 
-        h1p (hp_f b1 a1p)
-        h2p (hp_f b2 a2p)
+         dLp (- l2 l1)
+         dCp (- c2p c1p)
 
-        dLp (- l2 l1)
-        dCp (- c2p c1p)
+         dhp (dhp_f c1* c2* h1p h2p)
+         dHp (* 2 (sqrt (* c1p c2p)) (sin (/ (radians dhp) 2.0)))
 
-        dhp (dhp_f c1* c2* h1p h2p)
-        dHp (* 2 (sqrt (* c1p c2p)) (sin (/ (radians dhp) 2.0)))
+         a_L (/ (+ l1 l2) 2.0)
+         a_Cp (/ (+ c1p c2p) 2.0)
+         a_hp (a_hp_f c1* c2* h1p h2p)
 
-        a_L (/ (+ l1 l2) 2.0)
-        a_Cp (/ (+ c1p c2p) 2.0)
-        a_hp (a_hp_f c1* c2* h1p h2p)
+         t (- (+ (- 1.0 (* 0.17 (cos (radians (- a_hp 30)))))
+                 (* 0.24 (cos (radians (* 2 a_hp))))
+                 (* 0.32 (cos (radians (+ (* 3 a_hp) 6)))))
+              (* 0.20 (cos (radians (- (* 4 a_hp) 63)))))
 
-        t (- (+ (- 1.0 (* 0.17 (cos (radians (- a_hp 30)))))
-                (* 0.24 (cos (radians (* 2 a_hp))))
-                (* 0.32 (cos (radians (+ (* 3 a_hp) 6)))))
-             (* 0.20 (cos (radians (- (* 4 a_hp) 63)))))
+         d_ro (* 30 (exp (- (pow (/ (- a_hp 275) 25.0) 2))))
 
-        d_ro (* 30 (exp (- (pow (/ (- a_hp 275) 25.0) 2))))
+         rc (sqrt (/ (pow a_Cp 7.0)
+                     (+ (pow a_Cp 7.0)
+                        (pow 25.0 7.0))))
 
-        rc (sqrt (/ (pow a_Cp 7.0)
-                    (+ (pow a_Cp 7.0)
-                       (pow 25.0 7.0))))
+         sl (+ 1 (/ (* 0.015 (pow (- a_L 50) 2))
+                    (sqrt (+ 20 (pow (- a_L 50) 2)))))
 
-        sl (+ 1 (/ (* 0.015 (pow (- a_L 50) 2))
-                   (sqrt (+ 20 (pow (- a_L 50) 2)))))
-
-        sc (+ 1.0 (* 0.045 a_Cp))
-        sh (+ 1.0 (* 0.015 a_Cp t))
-        rt (* -2 rc (sin (radians (* 2 d_ro))))
-        de (sqrt (+ (pow (/ dLp (* sl kl)) 2)
-                    (pow (/ dCp (* sc kc)) 2)
-                    (pow (/ dHp (* sh kh)) 2)
-                    (* rt
-                       (/ dCp (* sc kc))
-                       (/ dHp (* sh kh)))))]
-    (max (min (/ de 100) 1.0) 0.0)))
+         sc (+ 1.0 (* 0.045 a_Cp))
+         sh (+ 1.0 (* 0.015 a_Cp t))
+         rt (* -2 rc (sin (radians (* 2 d_ro))))
+         de (sqrt (+ (pow (/ dLp (* sl kl)) 2)
+                     (pow (/ dCp (* sc kc)) 2)
+                     (pow (/ dHp (* sh kh)) 2)
+                     (* rt
+                        (/ dCp (* sc kc))
+                        (/ dHp (* sh kh)))))]
+     (max (min (/ de 100) 1.0) 0.0))))
 
 (defn rgb->lab
-  [c]
-  (xyz->lab (rgb->xyz c)))
+  (^doubles
+   [^doubles c]
+   (xyz->lab (rgb->xyz c))))
 
 (defn rgba->lab
-  [c]
-  (rgb->lab c))
+  (^doubles [^doubles c]
+   (rgb->lab c)))
 
 ;;; Private
 
@@ -166,9 +167,11 @@
                :h1p h1p
                :h2p h2p})))))
 
-(defn- rgb->xyz
-  [c]
-  (let [{:keys [r g b]} c
+(defn- ^doubles rgb->xyz
+  [^doubles c]
+  (let [r (aget c 0)
+        g (aget c 1)
+        b (aget c 2)
         r (/ r 255)
         g (/ g 255)
         b (/ b 255)
@@ -179,15 +182,20 @@
 
         r (adjust r)
         g (adjust g)
-        b (adjust b)]
+        b (adjust b)
 
-    {:x (+ (* r 0.4124) (* g 0.3576) (* b 0.1805))
-     :y (+ (* r 0.2126) (* g 0.7152) (* b 0.0722))
-     :z (+ (* r 0.0193) (* g 0.1192) (* b 0.9505))}))
+        arr (double-array 3)]
 
-(defn- xyz->lab
-  [c]
-  (let [{:keys [x y z]} c
+    (aset arr 0 (+ (* r 0.4124) (* g 0.3576) (* b 0.1805)))
+    (aset arr 1 (+ (* r 0.2126) (* g 0.7152) (* b 0.0722)))
+    (aset arr 2 (+ (* r 0.0193) (* g 0.1192) (* b 0.9505)))
+    arr))
+
+(defn- ^doubles xyz->lab
+  [^doubles c]
+  (let [x (aget c 0)
+        y (aget c 1)
+        z (aget c 2)
 
         ref-y 100.000
         ref-z 108.883
@@ -208,19 +216,11 @@
 
         l (- (* 116 y) 16)
         a (* 500 (- x y))
-        b (* 200 (- y z))]
+        b (* 200 (- y z))
 
-    {:l l :a a :b b}))
+        arr (double-array 3)]
 
-(defn test-cie
-  []
-  (let [dark-grey (rgb->lab {:r 10 :g 10 :b 10})
-        light-grey (rgb->lab {:r 100 :g 100 :b 100})
-
-        white (rgb->lab {:r 255 :g 255 :b 255})
-        black (rgb->lab {:r 0 :g 0 :b 0})]
-
-    [[:dark-grey/light-grey (ciede2000 dark-grey light-grey)]
-     [:black/white (ciede2000 black white)]]
-
-    ))
+    (aset arr 0 l)
+    (aset arr 1 a)
+    (aset arr 2 b)
+    arr))
