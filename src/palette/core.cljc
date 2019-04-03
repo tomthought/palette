@@ -210,9 +210,8 @@
   'opacity' [0 1]. By default it is set to 50%."
   ([c] (with-opacity c 0.50))
   ([c opacity]
-   (when (rgb? c)
-     (let [[r g b _] (parse-rgba c)]
-       (rgba-string r g b (clamp opacity 0 1.0))))))
+   (let [[r g b _] (parse-rgba (->rgba c))]
+     (rgba-string r g b (clamp opacity 0 1.0)))))
 
 ;;; Private
 
