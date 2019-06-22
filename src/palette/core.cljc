@@ -267,11 +267,19 @@
   [c p]
   (int (clamp (+ c (* 255 p)) 0 255)))
 
+(defn- digit?
+  [x]
+  (string->long (str x)))
+
+(defn- digits
+  [x]
+  (->> (st/split x #"\,")
+       (map #(apply str (filter digit? %)))
+       (map string->double)))
+
 (defn- rgb-digits
   [c]
-  (let [digits (->> c
-                    (re-seq #"[-+]?\d*\.\d+|\d+")
-                    (map string->double))]
+  (let [digits (digits c)]
     (cond
       (= 3 (count digits)) (conj (vec digits) 1.0)
       (= 4 (count digits)) digits
@@ -287,9 +295,7 @@
 
 (defn- hsv-digits
   [c]
-  (let [digits (->> c
-                    (re-seq #"[-+]?\d*\.\d+|\d+")
-                    (map string->double))]
+  (let [digits (digits c)]
     (when (= 3 (count digits)) digits)))
 
 (defn- parse-hsv
@@ -298,9 +304,7 @@
 
 (defn- lab-digits
   [c]
-  (let [digits (->> c
-                    (re-seq #"[-+]?\d*\.\d+|\d+")
-                    (map string->double))]
+  (let [digits (digits c)]
     (when (= 3 (count digits)) digits)))
 
 (defn- parse-lab
